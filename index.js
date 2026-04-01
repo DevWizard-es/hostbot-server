@@ -9,10 +9,20 @@ const express = require('express');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
+const cors = require('cors');
+const { initDb } = require('./database');
+const apiRoutes = require('./api_routes');
 
 const app = express();
+app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Ensure DB is initialized
+initDb();
+
+// Mount SaaS authentication and APIs
+app.use('/api', apiRoutes);
 
 const PORT = process.env.PORT || 3000;
 
@@ -21,101 +31,62 @@ const PORT = process.env.PORT || 3000;
 const conversations = new Map();
 const MAX_HISTORY = 10; // últimos 10 mensajes por usuario
 
-// ── Load business config ─────────────────────────────────────────
-function getBusinessConfig() {
-  // Try loading from config/business.json first (exported from admin panel)
-  const configPath = path.join(__dirname, 'config', 'business.json');
-  if (fs.existsSync(configPath)) {
-    try {
-      return JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    } catch (e) {
-      console.error('Error loading business.json:', e.message);
-    }
-  }
-
-  // Fallback to environment variables
-  return {
-    name: process.env.BUSINESS_NAME || 'Mi Negocio',
-    type: process.env.BUSINESS_TYPE || 'Bar',
-    description: process.env.BUSINESS_DESCRIPTION || '',
-    address: process.env.BUSINESS_ADDRESS || '',
-    phone: process.env.BUSINESS_PHONE || '',
-    hours: process.env.BUSINESS_HOURS || '',
-    currency: process.env.BUSINESS_CURRENCY || '€',
-  };
-}
-
-function getMenuConfig() {
-  // Try loading from config/menu.json first
-  const menuPath = path.join(__dirname, 'config', 'menu.json');
-  if (fs.existsSync(menuPath)) {
-    try {
-      return JSON.parse(fs.readFileSync(menuPath, 'utf8'));
-    } catch (e) {
-      console.error('Error loading menu.json:', e.message);
-    }
-  }
-
-  // Fallback to env variable
-  if (process.env.BUSINESS_MENU) {
-    try {
-      return JSON.parse(process.env.BUSINESS_MENU);
-    } catch (e) {}
-  }
-  return [];
-}
-
 // ── Build system prompt ──────────────────────────────────────────
-function buildSystemPrompt() {
-  const biz = getBusinessConfig();
-  const menu = getMenuConfig();
-  const tone = process.env.AGENT_TONE || 'friendly';
-  const agentName = process.env.AGENT_NAME || 'Asistente';
+async function buildSystemPrompt() {
+  const db = await initDb();
+  
+  // For MVP, fetch the latest configured business in the database
+  const biz = await db.get('SELECT * FROM businesses ORDER BY id DESC LIMIT 1') 
+    || { name: process.env.BUSINESS_NAME || 'Mi Negocio', type: 'Restaurante', phone: process.env.BUSINESS_PHONE, hours: '', address: '' };
+  
+  const agentConfig = biz.id ? await db.get('SELECT * FROM agent_configs WHERE business_id = ?', [biz.id]) : null;
+  const menu = biz.id ? await db.all('SELECT * FROM menus WHERE business_id = ? AND available = 1', [biz.id]) : [];
+
+  const tone = agentConfig?.tone || process.env.AGENT_TONE || 'friendly';
+  const agentName = agentConfig?.agent_name || process.env.AGENT_NAME || 'Asistente';
+  const additionalInstructions = agentConfig?.instructions || '';
 
   const toneInstructions = {
+    Amigable: 'comunicarte de forma amigable, cálida y cercana. Usa emojis con moderación.',
+    Profesional: 'comunicarte de forma formal y profesional. Evita el uso de emojis.',
+    Informal: 'comunicarte de forma casual, divertida y desenfadada. Usa emojis libremente.',
     friendly: 'comunicarte de forma amigable, cálida y cercana. Usa emojis con moderación.',
-    formal: 'comunicarte de forma formal y profesional. Evita el uso de emojis.',
-    casual: 'comunicarte de forma casual, divertida y desenfadada. Usa emojis libremente.',
   };
 
   let menuText = '';
   if (menu.length > 0) {
     menuText = '\n\n📋 MENÚ DISPONIBLE:\n';
-    menu.forEach(cat => {
-      menuText += `\n${cat.name || cat.category}:\n`;
-      const items = cat.items || [];
+    const categories = [...new Set(menu.map(m => m.category || 'General'))];
+    categories.forEach(cat => {
+      menuText += `\n${cat}:\n`;
+      const items = menu.filter(m => (m.category || 'General') === cat);
       items.forEach(item => {
-        if (item.available !== false) {
-          menuText += `  - ${item.name}: ${biz.currency}${Number(item.price).toFixed(2)}`;
-          if (item.description) menuText += ` (${item.description})`;
-          if (item.popular) menuText += ' ⭐';
-          menuText += '\n';
-        }
+        menuText += `  - ${item.name}: €${Number(item.price).toFixed(2)}`;
+        if (item.description) menuText += ` (${item.description})`;
+        menuText += '\n';
       });
     });
   }
 
   return `Eres ${agentName}, el asistente virtual de ${biz.name} (${biz.type}).
 Tu misión es atender a los clientes que escriben por Instagram y Facebook Messenger.
-Debes ${toneInstructions[tone] || toneInstructions.friendly}
+Debes ${toneInstructions[tone] || toneInstructions.Amigable}
+${additionalInstructions ? '\nINSTRUCCIONES DEL DUEÑO: ' + additionalInstructions : ''}
 
 📍 INFORMACIÓN DEL NEGOCIO:
 - Nombre: ${biz.name}
 - Tipo: ${biz.type}
-- Descripción: ${biz.description || 'No disponible'}
-- Dirección: ${biz.address || 'No disponible'}
-- Teléfono: ${biz.phone || 'No disponible'}
-- Horario: ${biz.hours || 'Consultar por mensaje'}
+- Dirección: ${biz.address || 'Consultar'}
+- Teléfono: ${biz.phone || 'Consultar'}
+- Horario: ${biz.schedule || 'Consultar'}
 ${menuText}
 
 📌 INSTRUCCIONES IMPORTANTES:
 - Responde SIEMPRE en el mismo idioma en que te escribe el cliente
 - Sé conciso: las respuestas por mensajería deben ser cortas (máx. 3-4 líneas)
 - Si preguntan por el menú, muestra los platos disponibles con precios
-- Para reservas o pedidos, pide: nombre, número de personas (reserva) o productos (pedido), y hora
-- Si no sabes algo, di que lo consultas y que contacten al ${biz.phone || 'negocio directamente'}
-- NO inventes precios, horarios ni información que no tengas
-- Si el cliente parece molesto, muestra empatía y ofrece solución`;
+- Para reservas o pedidos, pide: nombre, cantidad y hora
+- NO inventes precios ni productos`;
 }
 
 // ── Send message to OpenRouter ───────────────────────────────────
@@ -147,7 +118,7 @@ async function getAIResponse(senderId, userMessage) {
       {
         model,
         messages: [
-          { role: 'system', content: buildSystemPrompt() },
+          { role: 'system', content: await buildSystemPrompt() },
           ...history,
         ],
         max_tokens: 300,
