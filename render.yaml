@@ -1,0 +1,38 @@
+# render.yaml — Configuración de despliegue automático en Render.com
+services:
+  - type: web
+    name: hostbot-server
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node index.js
+    healthCheckPath: /api/status
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: META_PAGE_ACCESS_TOKEN
+        sync: false
+      - key: META_VERIFY_TOKEN
+        sync: false
+      - key: BUSINESS_NAME
+        sync: false
+      - key: BUSINESS_TYPE
+        sync: false
+      - key: BUSINESS_DESCRIPTION
+        sync: false
+      - key: BUSINESS_ADDRESS
+        sync: false
+      - key: BUSINESS_PHONE
+        sync: false
+      - key: BUSINESS_HOURS
+        sync: false
+      - key: AGENT_TONE
+        value: friendly
+      - key: AGENT_NAME
+        value: Asistente
+      - key: AI_MODEL
+        value: openai/gpt-4o-mini
