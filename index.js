@@ -275,17 +275,22 @@ app.post('/api/config', (req, res) => {
 });
 
 // ── GET /api/status — Health check
-app.get('/api/status', (req, res) => {
-  const biz = getBusinessConfig();
-  res.json({
-    status: 'online',
-    business: biz.name,
-    aiModel: process.env.AI_MODEL || 'openai/gpt-4o-mini',
-    webhookToken: process.env.META_VERIFY_TOKEN ? '✅ Configurado' : '❌ Falta configurar',
-    metaToken: process.env.META_PAGE_ACCESS_TOKEN && !process.env.META_PAGE_ACCESS_TOKEN.startsWith('EAAxx') ? '✅ Configurado' : '❌ Falta configurar',
-    openrouterKey: process.env.OPENROUTER_API_KEY && !process.env.OPENROUTER_API_KEY.startsWith('sk-or-v1-xxx') ? '✅ Configurado' : '❌ Falta configurar',
-    activeConversations: conversations.size,
-  });
+app.get('/api/status', async (req, res) => {
+  try {
+    const db = await initDb();
+    const biz = (await db.get('SELECT * FROM businesses ORDER BY id DESC LIMIT 1')) || { name: 'DB Started' };
+    res.json({
+      status: 'online',
+      business: biz.name,
+      aiModel: process.env.AI_MODEL || 'openai/gpt-4o-mini',
+      webhookToken: process.env.META_VERIFY_TOKEN ? '✅ Configurado' : '❌ Falta configurar',
+      metaToken: process.env.META_PAGE_ACCESS_TOKEN && !process.env.META_PAGE_ACCESS_TOKEN.startsWith('EAAxx') ? '✅ Configurado' : '❌ Falta configurar',
+      openrouterKey: process.env.OPENROUTER_API_KEY && !process.env.OPENROUTER_API_KEY.startsWith('sk-or-v1-xxx') ? '✅ Configurado' : '❌ Falta configurar',
+      activeConversations: conversations.size,
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'DB Error' });
+  }
 });
 
 // ── GET / — Página de estado
