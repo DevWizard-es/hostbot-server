@@ -271,8 +271,8 @@ router.post('/chat-test', authenticateToken, async (req, res) => {
     const menu = biz.id !== -1 ? await db.all('SELECT * FROM menus WHERE business_id = ? AND available = 1', [biz.id]) : [];
 
     const apiKey = process.env.OPENROUTER_API_KEY;
-    if (!apiKey || apiKey.startsWith('sk-or')) {
-      return res.json({ reply: '⚠️ Modo Simulación: La API Key de OpenRouter no está configurada o es la predeterminada. Necesitas establecer OPENROUTER_API_KEY en tu entorno (.env base).' });
+    if (!apiKey || apiKey.includes('xxx')) {
+      return res.json({ reply: '⚠️ Modo Simulación: La API Key de OpenRouter no ha sido reemplazada. Ve a Render y pega tu propia OPENROUTER_API_KEY.' });
     }
 
     const agentName = (agentConfig && agentConfig.agent_name) ? agentConfig.agent_name : 'Asistente';
