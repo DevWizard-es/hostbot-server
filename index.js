@@ -92,8 +92,10 @@ ${menuText}
 // ── Send message to OpenRouter ───────────────────────────────────
 async function getAIResponse(senderId, userMessage) {
   const apiKey = process.env.OPENROUTER_API_KEY;
-  let modelToUse = process.env.AI_MODEL || 'google/gemini-2.0-flash-exp:free';
-  if (modelToUse.includes('meta-llama')) modelToUse = 'google/gemini-2.0-flash-exp:free';
+  let modelToUse = process.env.AI_MODEL || 'openrouter/free';
+  if (modelToUse.includes('meta-llama') || modelToUse.includes('gemini')) {
+    modelToUse = 'openrouter/free';
+  }
 
   if (!apiKey || apiKey.startsWith('sk-or-v1-xxx')) {
     return '⚠️ El asistente no está configurado aún. Por favor contacta directamente con nosotros. ¡Gracias por tu paciencia!';
