@@ -216,7 +216,7 @@ router.get('/menu', authenticateToken, async (req, res) => {
 
 router.post('/menu', authenticateToken, async (req, res) => {
   const db = await initDb();
-  const menuArray = req.body.menu; // [{category, name, description, price, available}]
+  const menuArray = req.body.menu;
   
   if (!menuArray || !Array.isArray(menuArray)) return res.status(400).json({ error: 'Formato de menú inválido' });
 
@@ -230,6 +230,87 @@ router.post('/menu', authenticateToken, async (req, res) => {
   } catch(e) {
     console.error(e);
     res.status(500).json({ error: 'Internal Error' });
+  }
+});
+
+// ========================
+// PUBLIC ROUTES
+// ========================
+router.post('/public/reservations', async (req, res) => {
+  const db = await initDb();
+  const { slug, name, size, time } = req.body;
+  if (!slug || !name || !size || !time) return res.status(400).json({error: 'Faltan campos'});
+
+  const biolink = await db.get('SELECT business_id FROM biolinks WHERE slug = ?', [slug]);
+  if (!biolink) return res.status(404).json({error: 'Enlace no valido'});
+
+  try {
+    await db.run('INSERT INTO reservations (business_id, customer_name, party_size, res_time, status, channel) VALUES (?, ?, ?, ?, ?, ?)',
+      [biolink.business_id, name, size, time, 'pending', 'Web Biolink']);
+    res.json({ success: true });
+  } catch(e) {
+    res.status(500).json({error: 'Error guardando reserva'});
+  }
+});
+
+// ========================
+// AI CHAT TEST
+// ========================
+const axios = require('axios');
+
+router.post('/chat-test', authenticateToken, async (req, res) => {
+  const db = await initDb();
+  const { text } = req.body;
+  
+  const biz = await db.get('SELECT * FROM businesses WHERE user_id = ?', [req.user.userId]);
+  const agentConfig = await db.get('SELECT * FROM agent_configs WHERE business_id = ?', [biz.id]);
+  const menu = await db.all('SELECT * FROM menus WHERE business_id = ? AND available = 1', [biz.id]);
+
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  // If no API key is set, fallback to mock response to prevent crashing the test ui if the user hasnt configured variables.
+  if (!apiKey || apiKey.startsWith('sk-or')) {
+    return res.json({ reply: '⚠️ La API Key de OpenRouter no está configurada en el servidor (.env). Para integrar la IA en el modo Test, el admin debe configurar las variables de entorno.' });
+  }
+
+  const agentName = agentConfig?.agent_name || 'Asistente';
+  const tone = agentConfig?.tone || 'Amigable';
+  const instructions = agentConfig?.instructions || '';
+
+  let menuText = '';
+  if (menu.length > 0) {
+    menuText = 'MENÚ:\n';
+    menu.forEach(item => {
+      menuText += `- ${item.name} (${item.price}€): ${item.description || ''}\n`;
+    });
+  }
+
+  const sysPrompt = `Eres ${agentName}, el asistente de ${biz.name}.
+Tono: ${tone}.
+INFO NEGOCIO: ${biz.address || ''}, Horario: ${biz.schedule || ''}.
+Instrucciones extra: ${instructions}.
+${menuText}`;
+
+  try {
+    const aiRes = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
+      model: process.env.AI_MODEL || 'openai/gpt-4o-mini',
+      messages: [
+        { role: 'system', content: sysPrompt },
+        { role: 'user', content: text }
+      ],
+      max_tokens: 300,
+      temperature: 0.7
+    }, {
+      headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' }
+    });
+
+    const aiMessage = aiRes.data.choices[0]?.message?.content || 'Error procesando mensaje.';
+    
+    // Simulate updating KPI 'messages' by inserting a mock conversation row or just letting it pass
+    // For simplicity, we just return the reply
+    res.json({ reply: aiMessage });
+  } catch(e) {
+    console.error('Chat test error:', e.response?.data || e.message);
+    res.json({ reply: 'Error de conexión con IA. Verifica tu saldo o modelo en OpenRouter.' });
   }
 });
 
