@@ -51,7 +51,49 @@ async function initDb() {
       available BOOLEAN DEFAULT 1,
       FOREIGN KEY(business_id) REFERENCES businesses(id)
     );
+
+    CREATE TABLE IF NOT EXISTS biolinks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      business_id INTEGER,
+      slug TEXT UNIQUE,
+      display_name TEXT,
+      description TEXT,
+      color TEXT,
+      btn_chat BOOLEAN DEFAULT 1,
+      btn_menu BOOLEAN DEFAULT 1,
+      btn_res BOOLEAN DEFAULT 1,
+      btn_map BOOLEAN DEFAULT 1,
+      btn_shop BOOLEAN DEFAULT 0,
+      FOREIGN KEY(business_id) REFERENCES businesses(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS channels (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      business_id INTEGER,
+      platform TEXT,
+      identifier TEXT,
+      status TEXT,
+      token TEXT,
+      FOREIGN KEY(business_id) REFERENCES businesses(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS reservations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      business_id INTEGER,
+      customer_name TEXT,
+      party_size TEXT,
+      res_time TEXT,
+      status TEXT DEFAULT 'pending',
+      channel TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(business_id) REFERENCES businesses(id)
+    );
   `);
+
+  // Migrations for existing DBs
+  try { await db.exec('ALTER TABLE agent_configs ADD COLUMN take_orders BOOLEAN DEFAULT 1;'); } catch(e) {}
+  try { await db.exec('ALTER TABLE agent_configs ADD COLUMN manage_reservations BOOLEAN DEFAULT 1;'); } catch(e) {}
+
 
   console.log('Database initialized successfully.');
   return db;

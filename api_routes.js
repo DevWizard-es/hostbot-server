@@ -92,21 +92,103 @@ router.get('/config', authenticateToken, async (req, res) => {
 // UPDATE config
 router.post('/config', authenticateToken, async (req, res) => {
   const db = await initDb();
-  const { bizName, bizAddress, bizSchedule, bizPhone, agentName, tone, instructions } = req.body;
+  const { bizName, bizAddress, bizSchedule, bizPhone, agentName, tone, instructions, active, take_orders, manage_reservations } = req.body;
 
   try {
     await db.run(`UPDATE businesses SET name = COALESCE(?, name), address = COALESCE(?, address), schedule = COALESCE(?, schedule), phone = COALESCE(?, phone) WHERE user_id = ?`, 
       [bizName, bizAddress, bizSchedule, bizPhone, req.user.userId]);
       
-    if (agentName || tone || instructions) {
-      await db.run('UPDATE agent_configs SET agent_name = COALESCE(?, agent_name), tone = COALESCE(?, tone), instructions = COALESCE(?, instructions) WHERE business_id = ?',
-        [agentName, tone, instructions, req.user.bizId]);
+    if (agentName !== undefined || tone !== undefined || instructions !== undefined || active !== undefined) {
+      await db.run('UPDATE agent_configs SET agent_name = COALESCE(?, agent_name), tone = COALESCE(?, tone), instructions = COALESCE(?, instructions), active = COALESCE(?, active), take_orders = COALESCE(?, take_orders), manage_reservations = COALESCE(?, manage_reservations) WHERE business_id = ?',
+        [agentName, tone, instructions, active !== undefined ? (active ? 1 : 0) : null, take_orders !== undefined ? (take_orders ? 1 : 0) : null, manage_reservations !== undefined ? (manage_reservations ? 1 : 0) : null, req.user.bizId]);
     }
     res.json({ success: true });
   } catch(e) {
     console.error(e);
     res.status(500).json({ error: 'Internal Error' });
   }
+});
+
+// ========================
+// BIOLINK API
+// ========================
+router.get('/biolink', authenticateToken, async (req, res) => {
+  const db = await initDb();
+  let biolink = await db.get('SELECT * FROM biolinks WHERE business_id = ?', [req.user.bizId]);
+  if (!biolink) {
+    const defaultSlug = 'negocio-' + req.user.bizId;
+    await db.run('INSERT INTO biolinks (business_id, slug, display_name) VALUES (?, ?, ?)', [req.user.bizId, defaultSlug, 'Mi Negocio']);
+    biolink = await db.get('SELECT * FROM biolinks WHERE business_id = ?', [req.user.bizId]);
+  }
+  res.json(biolink);
+});
+
+router.post('/biolink', authenticateToken, async (req, res) => {
+  const db = await initDb();
+  const { slug, display_name, description, color, btn_chat, btn_menu, btn_res, btn_map, btn_shop } = req.body;
+  try {
+    const check = await db.get('SELECT id FROM biolinks WHERE slug = ? AND business_id != ?', [slug, req.user.bizId]);
+    if (check) return res.status(400).json({ error: 'Ese enlace ya está en uso' });
+
+    await db.run(`UPDATE biolinks SET slug = ?, display_name = ?, description = ?, color = ?, btn_chat = ?, btn_menu = ?, btn_res = ?, btn_map = ?, btn_shop = ? WHERE business_id = ?`,
+      [slug, display_name, description, color, btn_chat?1:0, btn_menu?1:0, btn_res?1:0, btn_map?1:0, btn_shop?1:0, req.user.bizId]);
+    res.json({ success: true });
+  } catch(e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error interno' });
+  }
+});
+
+router.get('/biolink/:slug', async (req, res) => {
+  const db = await initDb();
+  const biolink = await db.get('SELECT * FROM biolinks WHERE slug = ?', [req.params.slug]);
+  if (!biolink) return res.status(404).json({ error: 'No encontrado' });
+  res.json(biolink);
+});
+
+// ========================
+// RESERVATIONS API
+// ========================
+router.get('/reservations', authenticateToken, async (req, res) => {
+  const db = await initDb();
+  const reservations = await db.all('SELECT * FROM reservations WHERE business_id = ? ORDER BY id DESC LIMIT 50', [req.user.bizId]);
+  res.json(reservations);
+});
+
+router.post('/reservations/:id/status', authenticateToken, async (req, res) => {
+  const db = await initDb();
+  const { status } = req.body;
+  await db.run('UPDATE reservations SET status = ? WHERE id = ? AND business_id = ?', [status, req.params.id, req.user.bizId]);
+  res.json({ success: true });
+});
+
+router.post('/reservations/mock', authenticateToken, async (req, res) => {
+  const db = await initDb();
+  await db.run('INSERT INTO reservations (business_id, customer_name, party_size, res_time, status, channel) VALUES (?, ?, ?, ?, ?, ?)',
+    [req.user.bizId, req.body.name || 'Cliente Prueba', req.body.size || '2 pax', req.body.time || '20:00', 'pending', 'Web']);
+  res.json({ success: true });
+});
+
+// ========================
+// CHANNELS API
+// ========================
+router.get('/channels', authenticateToken, async (req, res) => {
+  const db = await initDb();
+  const channels = await db.all('SELECT * FROM channels WHERE business_id = ?', [req.user.bizId]);
+  res.json(channels);
+});
+
+router.post('/channels', authenticateToken, async (req, res) => {
+  const db = await initDb();
+  const { platform, identifier, status } = req.body;
+  const exists = await db.get('SELECT id FROM channels WHERE business_id = ? AND platform = ?', [req.user.bizId, platform]);
+  
+  if (exists) {
+    await db.run('UPDATE channels SET identifier = ?, status = ? WHERE id = ?', [identifier, status, exists.id]);
+  } else {
+    await db.run('INSERT INTO channels (business_id, platform, identifier, status) VALUES (?, ?, ?, ?)', [req.user.bizId, platform, identifier, status]);
+  }
+  res.json({ success: true });
 });
 
 // ========================
