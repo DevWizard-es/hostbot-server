@@ -2,17 +2,18 @@ const sqlite3 = require('sqlite3').verbose();
 const { open } = require('sqlite');
 const path = require('path');
 
-let db;
+let dbPromise = null;
 
 async function initDb() {
-  if (db) return db;
+  if (dbPromise) return dbPromise;
 
-  db = await open({
-    filename: path.join(__dirname, 'atendia.sqlite'),
-    driver: sqlite3.Database
-  });
+  dbPromise = (async () => {
+    const db = await open({
+      filename: path.join(__dirname, 'atendia.sqlite'),
+      driver: sqlite3.Database
+    });
 
-  await db.exec(`
+    await db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       email TEXT UNIQUE,
@@ -97,6 +98,8 @@ async function initDb() {
 
   console.log('Database initialized successfully.');
   return db;
+  })();
+  return dbPromise;
 }
 
 module.exports = { initDb };
