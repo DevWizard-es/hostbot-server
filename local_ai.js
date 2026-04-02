@@ -14,25 +14,25 @@ function getLocalResponse(query, biz, menu) {
   // 2. MENU / CATALOG
   if (text.includes('menu') || text.includes('carta') || text.includes('comer') || text.includes('beber') || text.includes('que hay') || text.includes('plato') || text.includes('precio')) {
     if (!menu || menu.length === 0) {
-      return `Puedes consultar nuestra carta digital aquí mismo en la web. No tengo los platos cargados ahora mismo, ¡pero te aseguro que todo está delicioso!`;
+      return `Puedes consultar nuestra carta digital aquí mismo en la web. No tengo los precios ahora mismo, ¡pero te aseguro que todo está delicioso! 🍕🍟`;
     }
-    const menuList = menu.slice(0, 5).map(item => `- ${item.name}: ${item.price}€`).join('\n');
-    return `Aquí tienes algunos de nuestros productos destacados:\n${menuList}\n\nPuedes ver la carta completa en la sección de Menú. 🍕🍟`;
+    const menuList = menu.slice(0, 8).map(item => `- ${item.name}: ${item.price}€`).join('\n');
+    return `🍴 NUESTRO MENÚ:\n${menuList}\n\n¿Te apetece probar algo? Puedes ver la carta completa arriba. 😊`;
   }
 
   // 3. LOCATION / ADDRESS
   if (text.includes('donde') || text.includes('ubicacion') || text.includes('direccion') || text.includes('donde estan') || text.includes('mapa') || text.includes('ir')) {
-    return `Nos encontramos en: ${biz.address || 'nuestro local (puedes consultar el mapa en el Bio Link)'}. ¡Esperamos verte pronto! 📍`;
+    return `📍 Estamos en: ${biz.address || 'nuestro establecimiento (consulta el mapa en el Bio Link)'}. ¡Te esperamos!`;
   }
 
   // 4. HOURS / SCHEDULE
   if (text.includes('horario') || text.includes('cuando abren') || text.includes('esta abierto') || text.includes('hora')) {
-    return `Nuestro horario es: ${biz.schedule || 'de lunes a domingo (consúltalo en el Bio Link)'}. 🕙`;
+    return `🕙 Nuestro horario es: ${biz.schedule || 'de lunes a domingo (consúltalo detallado en nuestro Bio Link)'}.`;
   }
 
   // 5. RESERVATIONS
   if (text.includes('reserva') || text.includes('reservar') || text.includes('mesa') || text.includes('comensales')) {
-    return `¡Claro! Puedes hacer una reserva ahora mismo pulsando el botón de "Hacer una reserva" en nuestra página principal. Solo dinos la fecha y hora. 📅`;
+    return `📅 Para reservar una mesa, por favor pulsa el botón de "Hacer reserva" que verás en esta misma página. ¡Es la forma más rápida y segura! 😊`;
   }
 
   // 6. CONTACT / PHONE

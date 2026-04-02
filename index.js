@@ -55,38 +55,22 @@ async function buildSystemPrompt() {
 
   let menuText = '';
   if (menu.length > 0) {
-    menuText = '\n\n📋 MENÚ DISPONIBLE:\n';
-    const categories = [...new Set(menu.map(m => m.category || 'General'))];
-    categories.forEach(cat => {
-      menuText += `\n${cat}:\n`;
-      const items = menu.filter(m => (m.category || 'General') === cat);
-      items.forEach(item => {
-        menuText += `  - ${item.name}: €${Number(item.price).toFixed(2)}`;
-        if (item.description) menuText += ` (${item.description})`;
-        menuText += '\n';
-      });
-    });
+    menuText = '\n\n🍴 MENÚ ACTUAL:\n' + menu.map(m => `- ${m.name} (${m.price}€): ${m.description || ''}`).join('\n');
   }
 
-  return `Eres ${agentName}, el asistente virtual de ${biz.name} (${biz.type}).
-Tu misión es atender a los clientes que escriben por Instagram y Facebook Messenger.
-Debes ${toneInstructions[tone] || toneInstructions.Amigable}
-${additionalInstructions ? '\nINSTRUCCIONES DEL DUEÑO: ' + additionalInstructions : ''}
-
-📍 INFORMACIÓN DEL NEGOCIO:
-- Nombre: ${biz.name}
-- Tipo: ${biz.type}
-- Dirección: ${biz.address || 'Consultar'}
-- Teléfono: ${biz.phone || 'Consultar'}
-- Horario: ${biz.schedule || 'Consultar'}
+  const prompt = `Eres ${agentName}, el asistente virtual experto de ${biz.name}.
+📍 UBICACIÓN: ${biz.address || 'Consultar'}.
+🕙 HORARIO: ${biz.schedule || 'Consultar'}.
 ${menuText}
 
-📌 INSTRUCCIONES IMPORTANTES:
-- Responde SIEMPRE en el mismo idioma en que te escribe el cliente
-- Sé conciso: las respuestas por mensajería deben ser cortas (máx. 3-4 líneas)
-- Si preguntan por el menú, muestra los platos disponibles con precios
-- Para reservas o pedidos, pide: nombre, cantidad y hora
-- NO inventes precios ni productos`;
+TONO: Debes ${toneInstructions[tone] || 'ser profesional'}.
+INSTRUCCIONES CRÍTICAS:
+- Usa los datos de arriba para responder sobre platos, precios y logística.
+- Si quieren RESERVAR, invítales a visitar nuestro Bio Link o pídeles su nombre y hora para anotar la solicitud.
+- Sé breve y servicial.
+- NO inventes precios ni productos.`;
+  
+  return prompt;
 }
 
 const { getLocalResponse } = require('./local_ai');

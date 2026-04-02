@@ -277,22 +277,36 @@ router.post('/public/chat', async (req, res) => {
   const menu = await db.all('SELECT * FROM menus WHERE business_id = ? AND available = 1', [bizInfo.id]);
 
   const apiKey = process.env.OPENROUTER_API_KEY;
-  // Use the intelligent openrouter/free router to avoid saturation/availability issues
   let modelToUse = process.env.AI_MODEL || 'openrouter/free';
   if (modelToUse.includes('meta-llama') || modelToUse.includes('gemini')) {
-    modelToUse = 'openrouter/free'; // Re-route to auto-available if broken models are set
+    modelToUse = 'openrouter/free';
   }
+
+  // 📝 BRAIN ENRICHMENT: Knowledge Injection
+  const menuText = menu.length > 0 ? 
+    `MENÚ ACTUAL:\n${menu.map(item => `- ${item.name} (${item.price}€): ${item.description || ''}`).join('\n')}` : 
+    'Menú no disponible online en este momento.';
+  
+  const sysPrompt = `Eres el asistente virtual de ${bizInfo.name}.
+📍 UBICACIÓN: ${bizInfo.address || 'Consultar en el mapa del Bio Link'}.
+🕙 HORARIO: ${bizInfo.schedule || 'Consultar en el Bio Link'}.
+🍴 ${menuText}
+TONO: ${agentConfig.tone || 'Amigable'}.
+INSTRUCCIONES:
+1. Responde preguntas sobre platos, precios, dónde estamos y horarios usando los datos de arriba.
+2. Si quieren RESERVAR, diles amablemente que usen el botón "Hacer reserva" que tienen en la página de Bio Link. 📅
+3. No inventes platos ni precios que no estén en la lista.`;
 
   try {
     const aiRes = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
       model: modelToUse,
       messages: [
-        { role: 'system', content: `Eres el asistente de ${bizInfo.name}. Tono: ${agentConfig.tone}.` },
+        { role: 'system', content: sysPrompt },
         { role: 'user', content: text || 'Hola' }
       ],
       max_tokens: 300,
       temperature: 0.7
-    }, { headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' }, timeout: 10000 });
+    }, { headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' }, timeout: 12000 });
     
     res.json({ reply: aiRes.data.choices[0]?.message?.content || 'No pude procesar tu mensaje.' });
   } catch(e) {
@@ -342,22 +356,22 @@ router.post('/chat-test', authenticateToken, async (req, res) => {
     }
 
     const agentName = (agentConfig && agentConfig.agent_name) ? agentConfig.agent_name : 'Asistente';
-    const tone = (agentConfig && agentConfig.tone) ? agentConfig.tone : 'Amigable';
-    const instructions = (agentConfig && agentConfig.instructions) ? agentConfig.instructions : 'Si te preguntan algo fuera de lo normal, responde amablemente.';
+    const instructions = (agentConfig && agentConfig.instructions) ? agentConfig.instructions : '';
+    
+    // 📝 BRAIN ENRICHMENT: Knowledge Injection
+    const menuText = menu.length > 0 ? 
+      `MENÚ ACTUAL:\n${menu.map(item => `- ${item.name} (${item.price}€): ${item.description || ''}`).join('\n')}` : 
+      'Menú no disponible online.';
 
-    let menuText = '';
-    if (menu && menu.length > 0) {
-      menuText = 'MENÚ:\n';
-      menu.forEach(item => {
-        menuText += `- ${item.name} (${item.price}€): ${item.description || ''}\n`;
-      });
-    }
-
-    const sysPrompt = `Eres ${agentName}, el asistente virtual de ${biz.name}.
-Tono: ${tone}.
-INFO NEGOCIO: ${biz.address || 'Consultar dirección'}, Horario: ${biz.schedule || 'Consultar horario'}.
-Instrucciones extra: ${instructions}.
-${menuText}`;
+    const sysPrompt = `Eres el asistente virtual de ${biz.name}.
+📍 UBICACIÓN: ${biz.address || 'Consultar'}.
+🕙 HORARIO: ${biz.schedule || 'Consultar'}.
+🍴 ${menuText}
+TONO: ${tone}.
+INSTRUCCIONES EXTRA: ${instructions}.
+1. Responde sobre información del negocio y menú.
+2. Si quieren RESERVAR, invítales a pulsar el botón de reserva del Bio Link. 📅
+3. No inventes datos.`;
 
     let modelToUse = process.env.AI_MODEL || 'openrouter/free';
     if (modelToUse.includes('meta-llama') || modelToUse.includes('gemini')) {
@@ -367,14 +381,14 @@ ${menuText}`;
     const aiRes = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
       model: modelToUse,
       messages: [
-        { role: 'system', content: `Eres el asistente de ${biz.name}. Tono: ${tone}.` },
+        { role: 'system', content: sysPrompt },
         { role: 'user', content: text || 'Hola' }
       ],
       max_tokens: 300,
       temperature: 0.7
     }, {
       headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
-      timeout: 10000 
+      timeout: 12000 
     });
 
     const aiMessage = aiRes.data.choices[0]?.message?.content || 'Error procesando respuesta del motor.';
