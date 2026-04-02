@@ -86,7 +86,20 @@ router.get('/config', authenticateToken, async (req, res) => {
   if (!biz) return res.status(404).json({ error: 'Negocio no encontrado' });
 
   const agentConfig = await db.get('SELECT * FROM agent_configs WHERE business_id = ?', [biz.id]);
-  res.json({ biz, agentConfig });
+  
+  // Real KPI count for reservations
+  const resCount = await db.get('SELECT COUNT(*) as c FROM reservations WHERE business_id = ?', [biz.id]);
+  
+  res.json({ 
+    biz, 
+    agentConfig, 
+    userEmail: req.user.email,
+    kpis: {
+      messages: 0,
+      orders: 0,
+      reservations: resCount.c || 0
+    }
+  });
 });
 
 // UPDATE config
