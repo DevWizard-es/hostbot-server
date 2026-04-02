@@ -291,9 +291,13 @@ INFO NEGOCIO: ${bizInfo.address || ''}, Horario: ${bizInfo.schedule || ''}.
 Instrucciones: ${instructions}.
 ${menuText}`;
 
+  // Use Gemini Flash Free for maximum stability, ignore broken ENV configs if present
+  let modelToUse = process.env.AI_MODEL || 'google/gemini-2.0-flash-exp:free';
+  if (modelToUse.includes('meta-llama')) modelToUse = 'google/gemini-2.0-flash-exp:free';
+
   try {
     const aiRes = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
-      model: process.env.AI_MODEL || 'google/gemini-2.0-flash-exp:free', // Use highly available free endpoint
+      model: modelToUse,
       messages: [
         { role: 'system', content: sysPrompt },
         { role: 'user', content: text || 'Hola' }
@@ -366,8 +370,11 @@ INFO NEGOCIO: ${biz.address || 'Consultar dirección'}, Horario: ${biz.schedule 
 Instrucciones extra: ${instructions}.
 ${menuText}`;
 
+    let modelToUse = process.env.AI_MODEL || 'google/gemini-2.0-flash-exp:free';
+    if (modelToUse.includes('meta-llama')) modelToUse = 'google/gemini-2.0-flash-exp:free';
+
     const aiRes = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
-      model: process.env.AI_MODEL || 'google/gemini-2.0-flash-exp:free',
+      model: modelToUse,
       messages: [
         { role: 'system', content: sysPrompt },
         { role: 'user', content: text || 'Hola' }

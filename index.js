@@ -92,7 +92,8 @@ ${menuText}
 // ── Send message to OpenRouter ───────────────────────────────────
 async function getAIResponse(senderId, userMessage) {
   const apiKey = process.env.OPENROUTER_API_KEY;
-  const model = process.env.AI_MODEL || 'openai/gpt-4o-mini';
+  let modelToUse = process.env.AI_MODEL || 'google/gemini-2.0-flash-exp:free';
+  if (modelToUse.includes('meta-llama')) modelToUse = 'google/gemini-2.0-flash-exp:free';
 
   if (!apiKey || apiKey.startsWith('sk-or-v1-xxx')) {
     return '⚠️ El asistente no está configurado aún. Por favor contacta directamente con nosotros. ¡Gracias por tu paciencia!';
@@ -116,7 +117,7 @@ async function getAIResponse(senderId, userMessage) {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model,
+        model: modelToUse,
         messages: [
           { role: 'system', content: await buildSystemPrompt() },
           ...history,
