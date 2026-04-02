@@ -130,7 +130,8 @@ router.get('/biolink', authenticateToken, async (req, res) => {
   let biolink = await db.get('SELECT * FROM biolinks WHERE business_id = ?', [req.user.bizId]);
   if (!biolink) {
     const defaultSlug = 'negocio-' + req.user.bizId;
-    await db.run('INSERT INTO biolinks (business_id, slug, display_name) VALUES (?, ?, ?)', [req.user.bizId, defaultSlug, 'Mi Negocio']);
+    const biz = await db.get('SELECT name FROM businesses WHERE id = ?', [req.user.bizId]);
+    await db.run('INSERT INTO biolinks (business_id, slug, display_name) VALUES (?, ?, ?)', [req.user.bizId, defaultSlug, biz ? biz.name : 'Mi Negocio']);
     biolink = await db.get('SELECT * FROM biolinks WHERE business_id = ?', [req.user.bizId]);
   }
   res.json(biolink);
@@ -262,11 +263,11 @@ router.post('/public/chat', async (req, res) => {
   const biolink = await db.get('SELECT business_id FROM biolinks WHERE slug = ?', [slug]);
   if (!biolink) return res.status(404).json({reply: 'Negocio no encontrado.'});
 
-  let биз = await db.get('SELECT * FROM businesses WHERE id = ?', [biolink.business_id]);
-  const agentConfig = await db.get('SELECT * FROM agent_configs WHERE business_id = ?', [биз.id]);
+  let bizInfo = await db.get('SELECT * FROM businesses WHERE id = ?', [biolink.business_id]);
+  const agentConfig = await db.get('SELECT * FROM agent_configs WHERE business_id = ?', [bizInfo.id]);
   if (!agentConfig || !agentConfig.active) return res.json({reply: 'El asistente de este negocio está apagado en este momento.'});
 
-  const menu = await db.all('SELECT * FROM menus WHERE business_id = ? AND available = 1', [биз.id]);
+  const menu = await db.all('SELECT * FROM menus WHERE business_id = ? AND available = 1', [bizInfo.id]);
 
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey || apiKey.includes('xxx')) return res.json({ reply: 'Sistema IA desactivado por el negocio.' });
@@ -279,9 +280,9 @@ router.post('/public/chat', async (req, res) => {
     menuText = 'MENÚ:\n' + menu.map(item => `- ${item.name} (${item.price}€): ${item.description || ''}`).join('\n');
   }
 
-  const sysPrompt = `Eres ${agentName}, el asistente virtual de ${биз.name}.
+  const sysPrompt = `Eres ${agentName}, el asistente virtual de ${bizInfo.name}.
 Tono: ${tone}.
-INFO NEGOCIO: ${биз.address || ''}, Horario: ${биз.schedule || ''}.
+INFO NEGOCIO: ${bizInfo.address || ''}, Horario: ${bizInfo.schedule || ''}.
 Instrucciones: ${instructions}.
 ${menuText}`;
 
@@ -330,9 +331,9 @@ router.post('/chat-test', authenticateToken, async (req, res) => {
     const db = await initDb();
     const { text } = req.body;
     
-    let биз = await db.get('SELECT * FROM businesses WHERE user_id = ?', [req.user.userId]);
+    let bizData = await db.get('SELECT * FROM businesses WHERE user_id = ?', [req.user.userId]);
     // Fallback if business not created yet
-    const biz = биз || { id: -1, name: 'Negocio de Prueba', address: 'Sin dirección', schedule: 'Sin horario' };
+    const biz = bizData || { id: -1, name: 'Negocio de Prueba', address: 'Sin dirección', schedule: 'Sin horario' };
     
     const agentConfig = biz.id !== -1 ? await db.get('SELECT * FROM agent_configs WHERE business_id = ?', [biz.id]) : null;
     const menu = biz.id !== -1 ? await db.all('SELECT * FROM menus WHERE business_id = ? AND available = 1', [biz.id]) : [];
@@ -361,7 +362,7 @@ Instrucciones extra: ${instructions}.
 ${menuText}`;
 
     const aiRes = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
-      model: process.env.AI_MODEL || 'openrouter/auto',
+      model: process.env.AI_MODEL || 'google/gemini-2.0-flash-exp:free',
       messages: [
         { role: 'system', content: sysPrompt },
         { role: 'user', content: text || 'Hola' }
