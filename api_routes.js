@@ -294,7 +294,7 @@ Instrucciones extra: ${instructions}.
 ${menuText}`;
 
     const aiRes = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
-      model: process.env.AI_MODEL || 'meta-llama/llama-3.1-8b-instruct:free',
+      model: process.env.AI_MODEL || 'openrouter/auto',
       messages: [
         { role: 'system', content: sysPrompt },
         { role: 'user', content: text || 'Hola' }
