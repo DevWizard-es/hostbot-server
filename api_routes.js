@@ -236,6 +236,73 @@ router.post('/menu', authenticateToken, async (req, res) => {
 // ========================
 // PUBLIC ROUTES
 // ========================
+
+router.get('/public/menu/:slug', async (req, res) => {
+  const db = await initDb();
+  const biolink = await db.get('SELECT business_id, display_name as bizName, color FROM biolinks WHERE slug = ?', [req.params.slug]);
+  if (!biolink) return res.status(404).json({error: 'Not found'});
+  
+  const menu = await db.all('SELECT * FROM menus WHERE business_id = ? AND available = 1', [biolink.business_id]);
+  
+  // Agrupar por categoría
+  const grouped = {};
+  menu.forEach(item => {
+    const cat = item.category || 'General';
+    if (!grouped[cat]) grouped[cat] = { category: cat, items: [] };
+    grouped[cat].items.push(item);
+  });
+  
+  res.json({ bizName: biolink.bizName, color: biolink.color, menu: Object.values(grouped) });
+});
+
+router.post('/public/chat', async (req, res) => {
+  const { slug, text } = req.body;
+  const db = await initDb();
+  
+  const biolink = await db.get('SELECT business_id FROM biolinks WHERE slug = ?', [slug]);
+  if (!biolink) return res.status(404).json({reply: 'Negocio no encontrado.'});
+
+  let биз = await db.get('SELECT * FROM businesses WHERE id = ?', [biolink.business_id]);
+  const agentConfig = await db.get('SELECT * FROM agent_configs WHERE business_id = ?', [биз.id]);
+  if (!agentConfig || !agentConfig.active) return res.json({reply: 'El asistente de este negocio está apagado en este momento.'});
+
+  const menu = await db.all('SELECT * FROM menus WHERE business_id = ? AND available = 1', [биз.id]);
+
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey || apiKey.includes('xxx')) return res.json({ reply: 'Sistema IA desactivado por el negocio.' });
+
+  const agentName = agentConfig.agent_name || 'Asistente';
+  const tone = agentConfig.tone || 'Amigable';
+  const instructions = agentConfig.instructions || '';
+  let menuText = '';
+  if (menu && menu.length > 0) {
+    menuText = 'MENÚ:\n' + menu.map(item => `- ${item.name} (${item.price}€): ${item.description || ''}`).join('\n');
+  }
+
+  const sysPrompt = `Eres ${agentName}, el asistente virtual de ${биз.name}.
+Tono: ${tone}.
+INFO NEGOCIO: ${биз.address || ''}, Horario: ${биз.schedule || ''}.
+Instrucciones: ${instructions}.
+${menuText}`;
+
+  try {
+    const aiRes = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
+      model: process.env.AI_MODEL || 'google/gemini-2.0-flash-exp:free', // Use highly available free endpoint
+      messages: [
+        { role: 'system', content: sysPrompt },
+        { role: 'user', content: text || 'Hola' }
+      ],
+      max_tokens: 300,
+      temperature: 0.7
+    }, { headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' }, timeout: 10000 });
+    
+    res.json({ reply: aiRes.data.choices[0]?.message?.content || 'No pude procesar tu mensaje.' });
+  } catch(e) {
+    console.error('Public chat error:', e.message);
+    res.json({ reply: '❌ La IA está experimentando problemas. Intenta más tarde.' });
+  }
+});
+
 router.post('/public/reservations', async (req, res) => {
   const db = await initDb();
   const { slug, name, size, time } = req.body;
