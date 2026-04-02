@@ -45,6 +45,11 @@ router.post('/auth/register', async (req, res) => {
     await db.run('INSERT INTO agent_configs (business_id, agent_name, tone, instructions) VALUES (?, ?, ?, ?)', 
       [bizResult.lastID, 'Asistente IA', 'Amigable', 'Siempre saludar cordialmente y ofrecer ayuda.']);
 
+    // [NEW] AUTO-CREATE BIOLINK
+    const defaultSlug = 'negocio-' + bizResult.lastID;
+    await db.run('INSERT INTO biolinks (business_id, slug, display_name) VALUES (?, ?, ?)', 
+      [bizResult.lastID, defaultSlug, bizName || 'Mi Negocio']);
+
     // Generate token
     const token = jwt.sign({ userId, email, bizId: bizResult.lastID }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ success: true, token, userId });
