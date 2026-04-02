@@ -89,6 +89,8 @@ ${menuText}
 - NO inventes precios ni productos`;
 }
 
+const { getLocalResponse } = require('./local_ai');
+
 // ── Send message to OpenRouter ───────────────────────────────────
 async function getAIResponse(senderId, userMessage) {
   const apiKey = process.env.OPENROUTER_API_KEY;
@@ -98,7 +100,11 @@ async function getAIResponse(senderId, userMessage) {
   }
 
   if (!apiKey || apiKey.startsWith('sk-or-v1-xxx')) {
-    return '⚠️ El asistente no está configurado aún. Por favor contacta directamente con nosotros. ¡Gracias por tu paciencia!';
+    // Return local response even if no API key
+    const db = await initDb();
+    const biz = await db.get('SELECT * FROM businesses ORDER BY id DESC LIMIT 1') || { name: 'Empresa' };
+    const menu = await db.all('SELECT * FROM menus WHERE business_id = ? AND available = 1', [biz.id]) || [];
+    return getLocalResponse(userMessage || '', biz, menu);
   }
 
   // Get/init conversation history
@@ -146,9 +152,11 @@ async function getAIResponse(senderId, userMessage) {
     return aiMessage;
 
   } catch (error) {
-    console.error('OpenRouter error:', error.response?.data || error.message);
-    const biz = getBusinessConfig();
-    return `Lo siento, estoy teniendo problemas técnicos. Puedes contactarnos directamente al ${biz.phone || 'teléfono del negocio'}. ¡Disculpa las molestias!`;
+    console.error('OpenRouter error, falling back to Local AI:', error.message);
+    const db = await initDb();
+    const biz = await db.get('SELECT * FROM businesses ORDER BY id DESC LIMIT 1') || { name: 'Empresa' };
+    const menu = await db.all('SELECT * FROM menus WHERE business_id = ? AND available = 1', [biz.id]) || [];
+    return getLocalResponse(userMessage || '', biz, menu);
   }
 }
 

@@ -91,13 +91,13 @@ async function initDb() {
     );
   `);
 
-  // Migrations for existing DBs
-  try { await db.exec('ALTER TABLE agent_configs ADD COLUMN take_orders BOOLEAN DEFAULT 1;'); } catch(e) {}
-  try { await db.exec('ALTER TABLE agent_configs ADD COLUMN manage_reservations BOOLEAN DEFAULT 1;'); } catch(e) {}
+    // Migrations for existing DBs
+    try { await db.exec('ALTER TABLE agent_configs ADD COLUMN take_orders BOOLEAN DEFAULT 1;'); } catch (e) { }
+    try { await db.exec('ALTER TABLE agent_configs ADD COLUMN manage_reservations BOOLEAN DEFAULT 1;'); } catch (e) { }
 
 
-  console.log('Database initialized successfully.');
-  return db;
+    console.log('Database initialized successfully.');
+    return db;
   })();
   return dbPromise;
 }

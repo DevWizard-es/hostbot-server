@@ -261,6 +261,8 @@ router.get('/public/menu/:slug', async (req, res) => {
   res.json({ bizName: biolink.bizName, color: biolink.color, menu: Object.values(grouped) });
 });
 
+const { getLocalResponse } = require('./local_ai');
+
 router.post('/public/chat', async (req, res) => {
   const { slug, text } = req.body;
   const db = await initDb();
@@ -275,22 +277,6 @@ router.post('/public/chat', async (req, res) => {
   const menu = await db.all('SELECT * FROM menus WHERE business_id = ? AND available = 1', [bizInfo.id]);
 
   const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey || apiKey.includes('xxx')) return res.json({ reply: 'Sistema IA desactivado por el negocio.' });
-
-  const agentName = agentConfig.agent_name || 'Asistente';
-  const tone = agentConfig.tone || 'Amigable';
-  const instructions = agentConfig.instructions || '';
-  let menuText = '';
-  if (menu && menu.length > 0) {
-    menuText = 'MENÚ:\n' + menu.map(item => `- ${item.name} (${item.price}€): ${item.description || ''}`).join('\n');
-  }
-
-  const sysPrompt = `Eres ${agentName}, el asistente virtual de ${bizInfo.name}.
-Tono: ${tone}.
-INFO NEGOCIO: ${bizInfo.address || ''}, Horario: ${bizInfo.schedule || ''}.
-Instrucciones: ${instructions}.
-${menuText}`;
-
   // Use the intelligent openrouter/free router to avoid saturation/availability issues
   let modelToUse = process.env.AI_MODEL || 'openrouter/free';
   if (modelToUse.includes('meta-llama') || modelToUse.includes('gemini')) {
@@ -301,7 +287,7 @@ ${menuText}`;
     const aiRes = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
       model: modelToUse,
       messages: [
-        { role: 'system', content: sysPrompt },
+        { role: 'system', content: `Eres el asistente de ${bizInfo.name}. Tono: ${agentConfig.tone}.` },
         { role: 'user', content: text || 'Hola' }
       ],
       max_tokens: 300,
@@ -310,8 +296,9 @@ ${menuText}`;
     
     res.json({ reply: aiRes.data.choices[0]?.message?.content || 'No pude procesar tu mensaje.' });
   } catch(e) {
-    console.error('Public chat error:', e.message);
-    res.json({ reply: '❌ La IA está experimentando problemas. Intenta más tarde.' });
+    console.error('Public chat LLM error, falling back to Local AI:', e.message);
+    const localReply = getLocalResponse(text || '', bizInfo, menu);
+    res.json({ reply: localReply });
   }
 });
 
@@ -380,7 +367,7 @@ ${menuText}`;
     const aiRes = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
       model: modelToUse,
       messages: [
-        { role: 'system', content: sysPrompt },
+        { role: 'system', content: `Eres el asistente de ${biz.name}. Tono: ${tone}.` },
         { role: 'user', content: text || 'Hola' }
       ],
       max_tokens: 300,
@@ -394,9 +381,14 @@ ${menuText}`;
     res.json({ reply: aiMessage });
     
   } catch(e) {
-    console.error('Chat test error:', e.response?.data || e.message || e);
-    // Return graceful JSON to avoid 500 error crashing frontend
-    res.json({ reply: '❌ Error al contactar con la IA: ' + (e.response?.data?.error?.message || e.message) });
+    console.error('Chat test LLM error, falling back to Local AI:', e.message);
+    // Fetch fresh biz data to ensure local response has valid info
+    const db = await initDb();
+    const biz = await db.get('SELECT * FROM businesses WHERE user_id = ?', [req.user.userId]) || { name: 'Empresa' };
+    const menu = await db.all('SELECT * FROM menus WHERE business_id = ? AND available = 1', [biz.id]) || [];
+    
+    const localReply = getLocalResponse(req.body.text || '', biz, menu);
+    res.json({ reply: '[Respuesta Local Alternativa] ' + localReply });
   }
 });
 
