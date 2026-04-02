@@ -259,58 +259,60 @@ router.post('/public/reservations', async (req, res) => {
 const axios = require('axios');
 
 router.post('/chat-test', authenticateToken, async (req, res) => {
-  const db = await initDb();
-  const { text } = req.body;
-  
-  const biz = await db.get('SELECT * FROM businesses WHERE user_id = ?', [req.user.userId]);
-  const agentConfig = await db.get('SELECT * FROM agent_configs WHERE business_id = ?', [biz.id]);
-  const menu = await db.all('SELECT * FROM menus WHERE business_id = ? AND available = 1', [biz.id]);
+  try {
+    const db = await initDb();
+    const { text } = req.body;
+    
+    let биз = await db.get('SELECT * FROM businesses WHERE user_id = ?', [req.user.userId]);
+    // Fallback if business not created yet
+    const biz = биз || { id: -1, name: 'Negocio de Prueba', address: 'Sin dirección', schedule: 'Sin horario' };
+    
+    const agentConfig = biz.id !== -1 ? await db.get('SELECT * FROM agent_configs WHERE business_id = ?', [biz.id]) : null;
+    const menu = biz.id !== -1 ? await db.all('SELECT * FROM menus WHERE business_id = ? AND available = 1', [biz.id]) : [];
 
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  // If no API key is set, fallback to mock response to prevent crashing the test ui if the user hasnt configured variables.
-  if (!apiKey || apiKey.startsWith('sk-or')) {
-    return res.json({ reply: '⚠️ La API Key de OpenRouter no está configurada en el servidor (.env). Para integrar la IA en el modo Test, el admin debe configurar las variables de entorno.' });
-  }
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    if (!apiKey || apiKey.startsWith('sk-or')) {
+      return res.json({ reply: '⚠️ Modo Simulación: La API Key de OpenRouter no está configurada o es la predeterminada. Necesitas establecer OPENROUTER_API_KEY en tu entorno (.env base).' });
+    }
 
-  const agentName = agentConfig?.agent_name || 'Asistente';
-  const tone = agentConfig?.tone || 'Amigable';
-  const instructions = agentConfig?.instructions || '';
+    const agentName = (agentConfig && agentConfig.agent_name) ? agentConfig.agent_name : 'Asistente';
+    const tone = (agentConfig && agentConfig.tone) ? agentConfig.tone : 'Amigable';
+    const instructions = (agentConfig && agentConfig.instructions) ? agentConfig.instructions : 'Si te preguntan algo fuera de lo normal, responde amablemente.';
 
-  let menuText = '';
-  if (menu.length > 0) {
-    menuText = 'MENÚ:\n';
-    menu.forEach(item => {
-      menuText += `- ${item.name} (${item.price}€): ${item.description || ''}\n`;
-    });
-  }
+    let menuText = '';
+    if (menu && menu.length > 0) {
+      menuText = 'MENÚ:\n';
+      menu.forEach(item => {
+        menuText += `- ${item.name} (${item.price}€): ${item.description || ''}\n`;
+      });
+    }
 
-  const sysPrompt = `Eres ${agentName}, el asistente de ${biz.name}.
+    const sysPrompt = `Eres ${agentName}, el asistente virtual de ${biz.name}.
 Tono: ${tone}.
-INFO NEGOCIO: ${biz.address || ''}, Horario: ${biz.schedule || ''}.
+INFO NEGOCIO: ${biz.address || 'Consultar dirección'}, Horario: ${biz.schedule || 'Consultar horario'}.
 Instrucciones extra: ${instructions}.
 ${menuText}`;
 
-  try {
     const aiRes = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
       model: process.env.AI_MODEL || 'openai/gpt-4o-mini',
       messages: [
         { role: 'system', content: sysPrompt },
-        { role: 'user', content: text }
+        { role: 'user', content: text || 'Hola' }
       ],
       max_tokens: 300,
       temperature: 0.7
     }, {
-      headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' }
+      headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
+      timeout: 10000 
     });
 
-    const aiMessage = aiRes.data.choices[0]?.message?.content || 'Error procesando mensaje.';
-    
-    // Simulate updating KPI 'messages' by inserting a mock conversation row or just letting it pass
-    // For simplicity, we just return the reply
+    const aiMessage = aiRes.data.choices[0]?.message?.content || 'Error procesando respuesta del motor.';
     res.json({ reply: aiMessage });
+    
   } catch(e) {
-    console.error('Chat test error:', e.response?.data || e.message);
-    res.json({ reply: 'Error de conexión con IA. Verifica tu saldo o modelo en OpenRouter.' });
+    console.error('Chat test error:', e.response?.data || e.message || e);
+    // Return graceful JSON to avoid 500 error crashing frontend
+    res.json({ reply: '❌ Error al contactar con la IA: ' + (e.response?.data?.error?.message || e.message) });
   }
 });
 
